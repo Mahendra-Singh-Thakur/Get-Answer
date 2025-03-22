@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Math Whiteboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/CSS/index.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header>
+        <h1>Smart Math Whiteboard</h1>
+        <p>Draw mathematical expressions and get instant recognition</p>
+    </header>
+
+    <main>
+        <div class="toolbar">
+            <div class="tool-group">
+                <button id="undo-btn" class="btn" title="Undo (Ctrl+Z)">
+                    <i class="fas fa-undo"></i> Undo
+                </button>
+                <button id="redo-btn" class="btn" title="Redo (Ctrl+Y)">
+                    <i class="fas fa-redo"></i> Redo
+                </button>
+            </div>
+            
+            <div class="tool-group">
+                <button id="eraser-btn" class="btn" title="Eraser (Ctrl+E)">
+                    <i class="fas fa-eraser"></i> Eraser
+                </button>
+                <button id="clear-btn" class="btn danger" title="Clear (Ctrl+C)">
+                    <i class="fas fa-trash"></i> Clear
+                </button>
+            </div>
+            
+            <div class="tool-group">
+                <div class="color-picker-container">
+                    <label for="color-picker">Color:</label>
+                    <input type="color" id="color-picker" value="#000000">
+                </div>
+                
+                <div class="brush-size-container">
+                    <label for="brush-size">Size:</label>
+                    <input type="range" id="brush-size" min="1" max="50" value="5">
+                    <span id="brush-size-value">5</span>
+                </div>
+            </div>
+            
+            <div class="tool-group">
+                <button id="predict-btn" class="btn primary" title="Get Answer (Ctrl+A)">
+                    <i class="fas fa-magic"></i> Get Answer
+                </button>
+                <button id="download-btn" class="btn secondary" title="Download PNG (Ctrl+D)">
+                    <i class="fas fa-download"></i> Save
+                </button>
+            </div>
+        </div>
+
+        <div class="canvas-container">
+            <canvas id="whiteboard"></canvas>
+            <div class="users-info">
+                <span id="users-count"><i class="fas fa-users"></i> 1 online</span>
+            </div>
+        </div>
+        
+        <!-- Result Display -->
+        <div id="result-display" class="hidden">
+            <div class="result-header">
+                <h2><i class="fas fa-calculator"></i> Prediction Result</h2>
+                <button id="close-result-btn" class="icon-btn" title="Close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div id="prediction-content"></div>
+        </div>
+
+        <!-- Loading Spinner -->
+        <div id="loading-spinner" class="hidden">
+            <div class="spinner"></div>
+            <p>Processing your math expression...</p>
+        </div>
+    </main>
+
+    <footer>
+        <p>Collaborative Mathematics Whiteboard with AI Recognition</p>
+    </footer>
+
+    <!-- Socket.IO & Fabric.js -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.2.4/fabric.min.js"></script>
+    <script src="/JS/Whiteboard.js"></script>
+</body>
+</html>

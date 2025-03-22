@@ -1,0 +1,69 @@
+/* Prediction Result Styling */
+.prediction-expression, 
+.prediction-result,
+.prediction-confidence {
+    margin-bottom: 15px;
+    font-size: 18px;
+}
+
+.prediction-result {
+    font-weight: bold;
+    color: #0078d7;
+}
+
+.prediction-confidence {
+    font-size: 14px;
+    color: #555;
+}
+
+/* Feedback Section */
+.prediction-feedback {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #eee;
+}
+
+.feedback-buttons {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.feedback-btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.feedback-btn.correct {
+    background-color: #4CAF50;
+    color: white;
+}
+
+.feedback-btn.incorrect {
+    background-color: #f44336;
+    color: white;
+}
+
+.correction-input {
+    margin-top: 15px;
+}
+
+.correction-input input {
+    padding: 8px;
+    margin-right: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    width: 200px;
+}
+
+.correction-input button {
+    padding: 8px 16px;
+    background-color: #0078d7;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+} 
