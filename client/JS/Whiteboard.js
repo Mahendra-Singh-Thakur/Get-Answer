@@ -19,6 +19,11 @@ canvas.defaultCursor = 'crosshair';
 let history = [], redoStack = [], isErasing = false, eraserSize = 30;
 let connectedUsers = 1; // Start with just the current user
 
+// Variables for selection area
+let isSelectingArea = false;
+let selectionStartX, selectionStartY;
+let selectionRect = null;
+
 // --------- Helpers ---------
 function saveHistory() {
     history.push(JSON.stringify(canvas));
@@ -89,28 +94,316 @@ function removeEraserCursor() {
 
 // --------- Get Answer (Save + Predict) ---------
 function getAnswer() {
+    // If we're in selection mode, use the selection for prediction
+    if (!canvas.isDrawingMode) {
+        useSelectionForPrediction();
+        return;
+    }
+    
+    // When in drawing mode, auto-select all objects
+    const objects = canvas.getObjects().filter(obj => obj.isDrawnPath || obj.type === 'text');
+    
+    if (objects.length === 0) {
+        showMessage('No objects to recognize. Draw something first.');
+        return;
+    }
+    
+    // Store current canvas view state
+    const viewportTransform = canvas.viewportTransform.slice();
+    const zoom = canvas.getZoom();
+    
+    // Switch to selection mode without changing zoom
+    const wasInDrawingMode = canvas.isDrawingMode;
+    if (wasInDrawingMode) {
+        // Toggle without resetting zoom
+        canvas.isDrawingMode = false;
+        canvas.selection = true;
+        
+        // Update objects' selectability
+        canvas.forEachObject(function(obj) {
+            if (obj.isDrawnPath) {
+                obj.selectable = true;
+                obj.evented = true;
+            }
+        });
+        
+        // Update UI
+        selectionBtn.classList.toggle('primary', !canvas.isDrawingMode);
+        selectionBtn.innerHTML = '<i class="fas fa-pen"></i> Draw Mode';
+        updatePredictButtonText();
+    }
+    
+    // Create a selection with all objects
+    const allObjectsGroup = new fabric.ActiveSelection(objects, {
+        canvas: canvas
+    });
+    
+    // Set as active selection
+    canvas.setActiveObject(allObjectsGroup);
+    
+    // Restore the original viewport transform to prevent zoom changes
+    canvas.setViewportTransform(viewportTransform);
+    canvas.setZoom(zoom);
+    canvas.renderAll();
+    
+    // Show the selection preview directly
+    showObjectSelectionPreview(allObjectsGroup);
+}
+
+// Create a temporary selection rectangle for visualization
+function createTemporarySelectionRect(left, top, width, height) {
+    // Remove any existing selection rectangle
+    if (selectionRect) {
+        canvas.remove(selectionRect);
+    }
+    
+    // Create selection rectangle
+    selectionRect = new fabric.Rect({
+        left: left,
+        top: top,
+        width: width,
+        height: height,
+        fill: 'rgba(67, 97, 238, 0.2)',
+        stroke: 'rgba(67, 97, 238, 0.8)',
+        strokeWidth: 2,
+        strokeDashArray: [5, 5],
+        selectable: false,
+        evented: false
+    });
+    
+    canvas.add(selectionRect);
+    canvas.renderAll();
+}
+
+function showSelectionPreview() {
+    // Get the background color selected by the user
+    const bgColor = predictionBgColor.value || '#FFFFFF';
+    
+    // Calculate selection boundaries with padding to ensure full digits are captured
+    const padding = 15; // Match the padding used in processSelectedArea
+    const left = Math.max(0, Math.round(selectionRect.left) - padding);
+    const top = Math.max(0, Math.round(selectionRect.top) - padding);
+    const width = Math.min(canvas.width - left, Math.round(selectionRect.width) + padding * 2);
+    const height = Math.min(canvas.height - top, Math.round(selectionRect.height) + padding * 2);
+    
+    // Create a temporary canvas for the cropped area
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = width;
+    tempCanvas.height = height;
+    const tempCtx = tempCanvas.getContext('2d');
+    
+    // Draw user-selected background
+    tempCtx.fillStyle = bgColor;
+    tempCtx.fillRect(0, 0, width, height);
+    
+    // Draw the selected portion from the main canvas to the temp canvas
+    const mainCanvas = canvas.getElement();
+    tempCtx.drawImage(mainCanvas, left, top, width, height, 0, 0, width, height);
+    
+    // Draw an indicator for the original selection (without padding)
+    // This helps the user understand what area was initially selected vs the padded area
+    const originalLeft = selectionRect.left - left;
+    const originalTop = selectionRect.top - top;
+    const originalWidth = selectionRect.width;
+    const originalHeight = selectionRect.height;
+    
+    tempCtx.strokeStyle = 'rgba(67, 97, 238, 0.5)';
+    tempCtx.setLineDash([5, 5]);
+    tempCtx.strokeRect(originalLeft, originalTop, originalWidth, originalHeight);
+    
+    // Get data URL from the temp canvas for preview
+    const dataURL = tempCanvas.toDataURL('image/png');
+    
+    // Create the preview panel
+    const previewPanel = document.createElement('div');
+    previewPanel.id = 'selection-preview';
+    
+    // Add preview title
+    const title = document.createElement('h3');
+    title.textContent = 'Selection Preview (with added padding)';
+    previewPanel.appendChild(title);
+    
+    // Add image preview
+    const previewImage = document.createElement('img');
+    previewImage.src = dataURL;
+    previewImage.alt = 'Selection Preview';
+    previewImage.style.border = '1px solid #ccc';
+    previewPanel.appendChild(previewImage);
+    
+    // Add description about the background color
+    const description = document.createElement('p');
+    description.innerHTML = `The dashed line shows your original selection. <br>Using <span style="display:inline-block; width:12px; height:12px; background:${bgColor}; border:1px solid #ccc;"></span> background for prediction.`;
+    description.style.fontSize = '0.9rem';
+    description.style.color = '#555';
+    description.style.textAlign = 'center';
+    description.style.margin = '10px 0';
+    previewPanel.appendChild(description);
+    
+    // Add buttons container
+    const buttonsContainer = document.createElement('div');
+    buttonsContainer.className = 'btn-container';
+    
+    // Create predict button
+    const predictButton = document.createElement('button');
+    predictButton.textContent = 'Predict (Enter)';
+    predictButton.className = 'btn primary';
+    predictButton.onclick = confirmPreview;
+    
+    // Create retry button
+    const retryButton = document.createElement('button');
+    retryButton.textContent = 'Retry Selection (R)';
+    retryButton.className = 'btn';
+    retryButton.onclick = retrySelection;
+    
+    // Create cancel button
+    const cancelButton = document.createElement('button');
+    cancelButton.textContent = 'Cancel (Esc)';
+    cancelButton.className = 'btn danger';
+    cancelButton.onclick = cancelPreview;
+    
+    // Add buttons to container
+    buttonsContainer.appendChild(predictButton);
+    buttonsContainer.appendChild(retryButton);
+    buttonsContainer.appendChild(cancelButton);
+    
+    // Add buttons container to panel
+    previewPanel.appendChild(buttonsContainer);
+    
+    // Add panel to document body
+    document.body.appendChild(previewPanel);
+    
+    // Add keyboard shortcut handler
+    const keyHandler = function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            confirmPreview();
+        } else if (e.key === 'r' || e.key === 'R') {
+            e.preventDefault();
+            retrySelection();
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            cancelPreview();
+        }
+    };
+    
+    document.addEventListener('keydown', keyHandler);
+    
+    // Functions for button actions
+    function confirmPreview() {
+        document.removeEventListener('keydown', keyHandler);
+        document.body.removeChild(previewPanel);
+        processSelectedArea();
+    }
+    
+    function retrySelection() {
+        document.removeEventListener('keydown', keyHandler);
+        document.body.removeChild(previewPanel);
+        
+        // Properly remove the selection rectangle from the canvas
+        if (selectionRect) {
+            canvas.remove(selectionRect);
+            canvas.renderAll();
+        }
+        
+        // Complete cleanup
+        selectionRect = null;
+        
+        // Reset selection mode flag
+        isSelectingArea = false;
+        
+        // Then restart area selection
+        startAreaSelection();
+    }
+    
+    function cancelPreview() {
+        document.removeEventListener('keydown', keyHandler);
+        document.body.removeChild(previewPanel);
+        
+        // Just cancel the selection without changing zoom
+        if (selectionRect) {
+            canvas.remove(selectionRect);
+            canvas.renderAll();
+            selectionRect = null;
+        }
+        
+        // Reset selection mode flag
+        isSelectingArea = false;
+    }
+}
+
+function processSelectedArea() {
+    if (!selectionRect) return;
+    
+    // Show loading spinner
+    showLoading();
+    
+    // Get the background color selected by the user
+    const bgColor = predictionBgColor.value || '#FFFFFF';
+    
+    // Calculate selection boundaries with extra padding to ensure full digits are captured
+    const padding = 15; // Add more padding around the selection
+    const left = Math.max(0, Math.round(selectionRect.left) - padding);
+    const top = Math.max(0, Math.round(selectionRect.top) - padding);
+    const width = Math.min(canvas.width - left, Math.round(selectionRect.width) + padding * 2);
+    const height = Math.min(canvas.height - top, Math.round(selectionRect.height) + padding * 2);
+    
+    // Store the selection area for future reference
+    window.lastSelectionArea = {
+        left: left,
+        top: top,
+        width: width,
+        height: height,
+        center: {
+            x: left + width/2,
+            y: top + height/2
+        },
+        originalRect: {
+            left: selectionRect.left,
+            top: selectionRect.top,
+            width: selectionRect.width,
+            height: selectionRect.height
+        },
+        bgColor: bgColor
+    };
+    
+    // Add custom background to eliminate alpha channel
     const bg = new fabric.Rect({
         left: 0,
         top: 0,
         width: canvas.width,
         height: canvas.height,
-        fill: 'white',
+        fill: bgColor,
         selectable: false,
         evented: false
     });
     canvas.add(bg);
     canvas.sendToBack(bg);
     canvas.renderAll();
-
-    const dataURL = canvas.toDataURL('image/png');
+    
+    // Create a temporary canvas for the cropped area
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = width;
+    tempCanvas.height = height;
+    const tempCtx = tempCanvas.getContext('2d');
+    
+    // Draw the selected portion from the main canvas to the temp canvas
+    const mainCanvas = canvas.getElement();
+    tempCtx.drawImage(mainCanvas, left, top, width, height, 0, 0, width, height);
+    
+    // Get data URL from the temp canvas
+    const dataURL = tempCanvas.toDataURL('image/png');
+    
+    // Remove temporary background and selection rectangle
     canvas.remove(bg);
+    canvas.remove(selectionRect);
     canvas.renderAll();
-
-    // Show loading spinner with animation
-    showLoading(); 
-
+    
+    // Reset selection mode
+    isSelectingArea = false;
+    selectionRect = null;
+    
     // Send to backend
-    fetch('/process', {  // Assuming '/process' endpoint will handle both saving + prediction
+    fetch('/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ image: dataURL })
@@ -165,7 +458,20 @@ function displayResults(data) {
                 predictionContent.appendChild(resultElement);
             }
             
-            // Remove filename info display - we no longer show this information
+            // Add button to print symbols onto whiteboard
+            const printButton = document.createElement('button');
+            printButton.className = 'btn primary';
+            printButton.innerHTML = '<i class="fas fa-print"></i> Print to Whiteboard';
+            printButton.onclick = () => {
+                printSymbolsToWhiteboard(symbols, evaluationResult);
+                resultDisplay.classList.add('hidden'); // Hide the result panel after printing
+            };
+            
+            // Add button container
+            const buttonContainer = document.createElement('div');
+            buttonContainer.className = 'button-container';
+            buttonContainer.appendChild(printButton);
+            predictionContent.appendChild(buttonContainer);
         } else {
             predictionContent.innerHTML = '<p class="no-symbols"><i class="fas fa-search"></i> No symbols detected</p>';
         }
@@ -173,6 +479,144 @@ function displayResults(data) {
     
     // Show the result display
     resultDisplay.classList.remove('hidden');
+}
+
+// New function to print symbols to the whiteboard
+function printSymbolsToWhiteboard(symbols, evaluationResult) {
+    // Save current state for undo
+    saveHistory();
+    
+    // Create a text object with the symbols joined together
+    let text = symbols.join(' ');
+    
+    // Add evaluation result if available
+    if (evaluationResult !== null) {
+        text += ' = ' + evaluationResult;
+    }
+    
+    // Calculate position - use the stored selection area if available
+    let posX = canvas.width / 2;
+    let posY = canvas.height / 2;
+    let fontSize = 30;
+    
+    // Use the last selection area for positioning - use the exact coordinates
+    if (window.lastSelectionArea) {
+        // Use exact center of the selection area for position
+        posX = window.lastSelectionArea.center.x;
+        posY = window.lastSelectionArea.top + window.lastSelectionArea.height + 20;
+        
+        // Adjust font size based on selection width
+        const selectionWidth = window.lastSelectionArea.width;
+        fontSize = Math.max(20, Math.min(50, selectionWidth / Math.max(1, text.length) * 1.2));
+    } else if (selectionRect) {
+        // Fallback to current selection rect if available
+        posX = selectionRect.left + selectionRect.width / 2;
+        posY = selectionRect.top + selectionRect.height + 30;
+        
+        // Adjust font size based on selection width
+        fontSize = Math.max(20, Math.min(50, selectionRect.width / Math.max(1, text.length) * 1.2));
+    }
+    
+    // Make sure text doesn't go off canvas
+    posY = Math.min(posY, canvas.height - 50);
+    
+    // Create a new Fabric.js text object
+    const textObject = new fabric.Text(text, {
+        left: posX,
+        top: posY,
+        fontSize: fontSize,
+        fill: colorPicker.value, // Use current color
+        fontFamily: 'Arial',
+        originX: 'center',
+        originY: 'center',
+        selectable: true,
+        hasControls: true,
+        hasBorders: true,
+        lockUniScaling: false,
+        centeredScaling: true,
+        centeredRotation: true,
+        borderColor: 'rgba(67, 97, 238, 0.5)',
+        cornerColor: 'rgba(67, 97, 238, 1)',
+        cornerSize: 12,
+        transparentCorners: false,
+        padding: 10,
+        // Add shadow to make text stand out better against drawings
+        shadow: new fabric.Shadow({
+            color: 'rgba(0,0,0,0.2)',
+            blur: 5,
+            offsetX: 2,
+            offsetY: 2
+        })
+    });
+    
+    // Add to canvas
+    canvas.add(textObject);
+    canvas.setActiveObject(textObject);
+    
+    // Temporarily enable object selection on canvas
+    const previousSelectionState = canvas.selection;
+    const previousDrawingMode = canvas.isDrawingMode;
+    canvas.selection = true;
+    canvas.isDrawingMode = false;
+    
+    // Add a message to guide the user
+    showMessage('Text added! You can now move, resize, or rotate it. Double-click to edit. Click elsewhere to continue drawing.');
+    
+    // Set up one-time event handler to restore drawing mode when user clicks elsewhere
+    canvas.once('mouse:down', function(options) {
+        if (options.target !== textObject) {
+            canvas.isDrawingMode = previousDrawingMode;
+            canvas.selection = previousSelectionState;
+            hideMessage();
+        }
+    });
+    
+    // Update canvas
+    canvas.renderAll();
+    
+    // Emit the change to other users
+    socket.emit('draw', {
+        type: 'object',
+        object: JSON.stringify(canvas),
+        sender: socket.id
+    });
+}
+
+// Function to show a temporary message to the user
+function showMessage(text) {
+    // Create or get the message element
+    let messageEl = document.getElementById('canvas-message');
+    if (!messageEl) {
+        messageEl = document.createElement('div');
+        messageEl.id = 'canvas-message';
+        messageEl.style.position = 'absolute';
+        messageEl.style.top = '10px';
+        messageEl.style.left = '50%';
+        messageEl.style.transform = 'translateX(-50%)';
+        messageEl.style.background = 'rgba(0,0,0,0.7)';
+        messageEl.style.color = 'white';
+        messageEl.style.padding = '10px 20px';
+        messageEl.style.borderRadius = '5px';
+        messageEl.style.zIndex = '50';
+        messageEl.style.transition = 'opacity 0.3s ease';
+        messageEl.style.pointerEvents = 'none';
+        document.querySelector('.canvas-container').appendChild(messageEl);
+    }
+    
+    messageEl.textContent = text;
+    messageEl.style.opacity = '1';
+}
+
+function hideMessage() {
+    const messageEl = document.getElementById('canvas-message');
+    if (messageEl) {
+        messageEl.style.opacity = '0';
+        setTimeout(() => {
+            if (messageEl.parentNode) {
+                messageEl.parentNode.removeChild(messageEl);
+            }
+        }, 300);
+    }
 }
 
 // Format the math expression for better display
@@ -284,13 +728,45 @@ function hideLoading() {
 }
 
 // --------- Real-time Sync ---------
-canvas.on('path:created', (e) => {
+canvas.on('path:created', function(e) {
+    const path = e.path;
+    // Make the path selectable with the selection tool, but not in drawing mode
+    path.selectable = false; 
+    
+    // Store the path on a custom property so we can toggle it later
+    path.isDrawnPath = true;
+    
+    // Save state for undo functionality
     saveHistory();
-    socket.emit('draw', e.path.toObject());
+
+    // Emit to other users
+    socket.emit('draw', {
+        type: 'path',
+        path: path.path,
+        color: path.stroke,
+        width: path.strokeWidth,
+        sender: socket.id
+    });
 });
 
-socket.on('draw', (pathObj) => {
-    fabric.util.enlivenObjects([pathObj], ([obj]) => { canvas.add(obj); canvas.renderAll(); });
+socket.on('draw', (data) => {
+    if (data.sender !== socket.id) { // Ignore events from self
+        if (data.type === 'path') {
+            // For drawing paths (freehand drawing)
+            const path = new fabric.Path(data.path);
+            path.set({
+                stroke: data.color,
+                strokeWidth: data.width,
+                fill: null,
+                selectable: false
+            });
+            canvas.add(path);
+            canvas.renderAll();
+        } else if (data.type === 'object') {
+            // For objects (like text)
+            canvas.loadFromJSON(data.object, canvas.renderAll.bind(canvas));
+        }
+    }
 });
 
 socket.on('clear', (data) => {
@@ -328,6 +804,12 @@ const undoBtn = document.getElementById('undo-btn');
 const redoBtn = document.getElementById('redo-btn');
 const downloadBtn = document.getElementById('download-btn');
 const closeResultBtn = document.getElementById('close-result-btn');
+const selectionBtn = document.getElementById('selection-btn');
+const selectAllBtn = document.getElementById('select-all-btn');
+const predictionBgColor = document.getElementById('prediction-bg-color');
+const helpBtn = document.getElementById('help-btn');
+const closeHelpBtn = document.getElementById('close-help-btn');
+const helpModal = document.getElementById('help-modal');
 
 colorPicker.addEventListener('input', () => {
     if (!isErasing) canvas.freeDrawingBrush.color = colorPicker.value;
@@ -346,6 +828,39 @@ undoBtn.addEventListener('click', undo);
 redoBtn.addEventListener('click', redo);
 downloadBtn.addEventListener('click', downLoad);
 closeResultBtn.addEventListener('click', closeResultDisplay);
+selectionBtn.addEventListener('click', toggleSelectionMode);
+if (selectAllBtn) {
+    selectAllBtn.addEventListener('click', () => {
+        if (canvas.isDrawingMode) {
+            toggleSelectionMode();
+        }
+        selectAllObjects();
+    });
+}
+
+// Help button functionality
+helpBtn.addEventListener('click', () => {
+    helpModal.classList.remove('hidden');
+});
+
+closeHelpBtn.addEventListener('click', () => {
+    helpModal.classList.add('hidden');
+});
+
+// Close help modal when clicking outside the content
+helpModal.addEventListener('click', (e) => {
+    if (e.target === helpModal) {
+        helpModal.classList.add('hidden');
+    }
+});
+
+// Close help modal with Escape key
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !helpModal.classList.contains('hidden')) {
+        helpModal.classList.add('hidden');
+        e.preventDefault(); // Prevent other escape handlers
+    }
+});
 
 // --------- Download Feature ---------
 function downLoad(){
@@ -359,8 +874,13 @@ function downLoad(){
 document.addEventListener('keydown', (e) => {
     if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undo(); }
     else if (e.ctrlKey && e.key === 'y') { e.preventDefault(); redo(); }
-    else if (e.ctrlKey && e.key === 'a') { e.preventDefault(); getAnswer(); }
+    else if (e.ctrlKey && e.key === 'p') { e.preventDefault(); getAnswer(); }
     else if (e.ctrlKey && e.key === 'e') { e.preventDefault(); toggleEraser(); }
+    else if (e.ctrlKey && e.key === 's') { e.preventDefault(); toggleSelectionMode(); }
+    else if (e.ctrlKey && e.key === 'a') { e.preventDefault(); 
+        if (canvas.isDrawingMode) toggleSelectionMode(); 
+        selectAllObjects(); 
+    }
     else if (e.ctrlKey && e.key === 'c') { e.preventDefault(); clearBoard(); }
     else if (e.ctrlKey && e.key === 'd') { e.preventDefault(); downLoad(); }
 });
@@ -385,6 +905,390 @@ function resizeCanvas() {
 // Initial setup
 resizeCanvas();
 updateUserCount();
+updatePredictButtonText();
 
 // Save initial state
 saveHistory();
+
+// Set up canvas events for object manipulation
+canvas.on('mouse:down', function(options) {
+    if (options.target && options.target.type === 'text') {
+        // If clicking on a text object, switch to selection mode
+        if (canvas.isDrawingMode) {
+            // Remember drawing state to restore later
+            canvas._lastDrawingMode = true;
+            canvas.isDrawingMode = false;
+        }
+    } else if (!options.target && canvas._lastDrawingMode) {
+        // If clicking on empty space and we were previously drawing
+        canvas.isDrawingMode = true;
+        canvas._lastDrawingMode = false;
+    }
+});
+
+// Add double-click handler for text editing
+canvas.on('mouse:dblclick', function(options) {
+    if (options.target && options.target.type === 'text') {
+        const textObj = options.target;
+        
+        // Enter editing mode
+        textObj.enterEditing();
+        textObj.selectAll();
+        
+        // Show editing indicator
+        showMessage('Editing text. Click elsewhere when done.');
+        
+        // Set up event for when editing exits
+        textObj.on('editing:exited', function() {
+            hideMessage();
+            
+            // Make sure the changes are saved in history
+            saveHistory();
+            
+            // Emit to other users
+            socket.emit('draw', {
+                type: 'object',
+                object: JSON.stringify(canvas),
+                sender: socket.id
+            });
+        });
+    }
+});
+
+// --------- Selection Mode ---------
+function toggleSelectionMode() {
+    // First disable eraser if it's active
+    if (isErasing) {
+        toggleEraser();
+    }
+    
+    // Store current canvas view state
+    const viewportTransform = canvas.viewportTransform.slice();
+    const zoom = canvas.getZoom();
+    
+    // Toggle drawing mode
+    canvas.isDrawingMode = !canvas.isDrawingMode;
+    
+    // Toggle selection of objects
+    canvas.selection = !canvas.isDrawingMode;
+    
+    // Toggle selectability of all paths based on mode
+    canvas.forEachObject(function(obj) {
+        if (obj.isDrawnPath) {
+            obj.selectable = !canvas.isDrawingMode;
+            obj.evented = !canvas.isDrawingMode;
+        }
+    });
+    
+    // Restore the original viewport transform to prevent zoom changes
+    canvas.setViewportTransform(viewportTransform);
+    canvas.setZoom(zoom);
+    
+    // Update predict button text
+    updatePredictButtonText();
+    
+    // Update button appearance
+    selectionBtn.classList.toggle('primary', !canvas.isDrawingMode);
+    selectionBtn.innerHTML = !canvas.isDrawingMode ? 
+        '<i class="fas fa-pen"></i> Draw Mode' : 
+        '<i class="fas fa-mouse-pointer"></i> Select';
+    
+    // Show a helpful message
+    if (!canvas.isDrawingMode) {
+        showMessage('Selection mode: Click to select, move and resize objects. Click "Use Selection" to predict.');
+    } else {
+        showMessage('Drawing mode: You can now draw freely.');
+        setTimeout(hideMessage, 2000);
+    }
+}
+
+// Update UI for both selection techniques
+function updatePredictButtonText() {
+    // Update the predict button text based on mode
+    if (canvas.isDrawingMode) {
+        predictBtn.innerHTML = '<i class="fas fa-magic"></i> Auto Select';
+    } else {
+        predictBtn.innerHTML = '<i class="fas fa-magic"></i> Use Selection';
+    }
+}
+
+// New function to select all objects on canvas
+function selectAllObjects() {
+    // Store current canvas view state
+    const viewportTransform = canvas.viewportTransform.slice();
+    const zoom = canvas.getZoom();
+    
+    // Deselect any currently selected objects
+    canvas.discardActiveObject();
+    
+    // Get all selectable objects on the canvas
+    const objects = canvas.getObjects().filter(obj => obj.isDrawnPath || obj.type === 'text');
+    
+    if (objects.length === 0) {
+        showMessage('No objects to select. Draw something first.');
+        return false;
+    }
+    
+    // Create a new group with all objects
+    const allObjectsGroup = new fabric.ActiveSelection(objects, {
+        canvas: canvas
+    });
+    
+    // Set as active selection
+    canvas.setActiveObject(allObjectsGroup);
+    
+    // Restore the original viewport transform to prevent zoom changes
+    canvas.setViewportTransform(viewportTransform);
+    canvas.setZoom(zoom);
+    canvas.renderAll();
+    
+    showMessage('All objects selected. Click "Use Selection" to predict.');
+    return true;
+}
+
+// Enhanced useSelectionForPrediction function 
+function useSelectionForPrediction() {
+    // Check if we're in selection mode
+    if (canvas.isDrawingMode) {
+        // Store current canvas view state before switching
+        const viewportTransform = canvas.viewportTransform.slice();
+        const zoom = canvas.getZoom();
+        
+        // If not in selection mode, switch to it (using our custom toggle that preserves zoom)
+        toggleSelectionMode();
+        
+        // Restore the original viewport transform to prevent zoom changes
+        canvas.setViewportTransform(viewportTransform);
+        canvas.setZoom(zoom);
+        canvas.renderAll();
+        
+        showMessage('Now in selection mode. Select objects by dragging around them, then click "Use Selection" again.');
+        return;
+    }
+    
+    // Get currently selected objects
+    let activeSelection = canvas.getActiveObject();
+    
+    // If nothing is selected, try to select all objects
+    if (!activeSelection && !selectAllObjects()) {
+        return; // selectAllObjects will show appropriate message
+    }
+    
+    // Get the updated active selection after selectAllObjects
+    activeSelection = canvas.getActiveObject();
+    
+    // Show a preview of just the selected objects
+    showObjectSelectionPreview(activeSelection);
+}
+
+// New function to preview only the selected objects
+function showObjectSelectionPreview(selection) {
+    // Create a temporary canvas for the selected objects
+    const tempCanvas = document.createElement('canvas');
+    
+    // Get the background color selected by the user
+    const bgColor = document.getElementById('prediction-bg-color').value || '#FFFFFF';
+    
+    // Get the bounding box of the selection (for sizing the temp canvas)
+    const bounds = selection.getBoundingRect();
+    const padding = 15;
+    
+    // Set temp canvas dimensions with padding
+    tempCanvas.width = bounds.width + padding * 2;
+    tempCanvas.height = bounds.height + padding * 2;
+    const tempCtx = tempCanvas.getContext('2d');
+    
+    // Draw user-selected background
+    tempCtx.fillStyle = bgColor;
+    tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+    
+    // Clone the selection to avoid modifying the original
+    const clonedObjects = [];
+    
+    if (selection.type === 'activeSelection') {
+        // Group selection - handle multiple objects
+        selection.forEachObject(obj => {
+            const clone = fabric.util.object.clone(obj);
+            // Adjust position relative to selection bounds
+            clone.left = obj.left - bounds.left + padding;
+            clone.top = obj.top - bounds.top + padding;
+            clonedObjects.push(clone);
+        });
+    } else {
+        // Single object selection
+        const clone = fabric.util.object.clone(selection);
+        clone.left = padding;
+        clone.top = padding;
+        clonedObjects.push(clone);
+    }
+    
+    // Create a temporary canvas with fabric
+    const tempFabricCanvas = new fabric.StaticCanvas();
+    tempFabricCanvas.setWidth(tempCanvas.width);
+    tempFabricCanvas.setHeight(tempCanvas.height);
+    
+    // Set background color for the fabric canvas too
+    tempFabricCanvas.setBackgroundColor(bgColor, tempFabricCanvas.renderAll.bind(tempFabricCanvas));
+    
+    // Add the cloned objects to the temp canvas
+    clonedObjects.forEach(obj => tempFabricCanvas.add(obj));
+    tempFabricCanvas.renderAll();
+    
+    // Get data URL from the temp canvas
+    const dataURL = tempFabricCanvas.toDataURL('image/png');
+    
+    // Create the preview panel
+    const previewPanel = document.createElement('div');
+    previewPanel.id = 'selection-preview';
+    
+    // Add preview title
+    const title = document.createElement('h3');
+    title.textContent = 'Selected Objects Preview';
+    previewPanel.appendChild(title);
+    
+    // Add image preview
+    const previewImage = document.createElement('img');
+    previewImage.src = dataURL;
+    previewImage.alt = 'Selection Preview';
+    previewImage.style.border = '1px solid #ccc';
+    previewPanel.appendChild(previewImage);
+    
+    // Add description
+    const description = document.createElement('p');
+    description.textContent = 'These are your selected objects that will be processed for prediction.';
+    description.style.fontSize = '0.9rem';
+    description.style.color = '#555';
+    description.style.textAlign = 'center';
+    description.style.margin = '10px 0';
+    previewPanel.appendChild(description);
+    
+    // Add buttons container
+    const buttonsContainer = document.createElement('div');
+    buttonsContainer.className = 'btn-container';
+    
+    // Create predict button
+    const predictButton = document.createElement('button');
+    predictButton.textContent = 'Predict (Enter)';
+    predictButton.className = 'btn primary';
+    predictButton.onclick = () => {
+        document.removeEventListener('keydown', keyHandler);
+        document.body.removeChild(previewPanel);
+        processObjectSelection(selection, bounds, padding, bgColor);
+    };
+    
+    // Create cancel button
+    const cancelButton = document.createElement('button');
+    cancelButton.textContent = 'Cancel (Esc)';
+    cancelButton.className = 'btn danger';
+    cancelButton.onclick = () => {
+        document.removeEventListener('keydown', keyHandler);
+        document.body.removeChild(previewPanel);
+        
+        // Maintain zoom level by properly handling the selection
+        // Don't discard the active object to maintain selection
+    };
+    
+    // Add buttons to container
+    buttonsContainer.appendChild(predictButton);
+    buttonsContainer.appendChild(cancelButton);
+    
+    // Add buttons container to panel
+    previewPanel.appendChild(buttonsContainer);
+    
+    // Add panel to document body
+    document.body.appendChild(previewPanel);
+    
+    // Add keyboard shortcut handler
+    const keyHandler = function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            predictButton.click();
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            cancelButton.click();
+        }
+    };
+    
+    document.addEventListener('keydown', keyHandler);
+}
+
+// Process the object selection
+function processObjectSelection(selection, bounds, padding, bgColor) {
+    // Show loading spinner
+    showLoading();
+    
+    // Store the selection area for future reference
+    window.lastSelectionArea = {
+        left: bounds.left,
+        top: bounds.top,
+        width: bounds.width,
+        height: bounds.height,
+        center: {
+            x: bounds.left + bounds.width/2,
+            y: bounds.top + bounds.height/2
+        },
+        bgColor: bgColor
+    };
+    
+    // Create a temporary canvas for the selected objects
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = bounds.width + padding * 2;
+    tempCanvas.height = bounds.height + padding * 2;
+    const tempCtx = tempCanvas.getContext('2d');
+    
+    // Draw user-selected background
+    tempCtx.fillStyle = bgColor;
+    tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+    
+    // Clone the selection to avoid modifying the original
+    const clonedObjects = [];
+    
+    if (selection.type === 'activeSelection') {
+        // Group selection - handle multiple objects
+        selection.forEachObject(obj => {
+            const clone = fabric.util.object.clone(obj);
+            // Adjust position relative to selection bounds
+            clone.left = obj.left - bounds.left + padding;
+            clone.top = obj.top - bounds.top + padding;
+            clonedObjects.push(clone);
+        });
+    } else {
+        // Single object selection
+        const clone = fabric.util.object.clone(selection);
+        clone.left = padding;
+        clone.top = padding;
+        clonedObjects.push(clone);
+    }
+    
+    // Create a temporary canvas with fabric
+    const tempFabricCanvas = new fabric.StaticCanvas();
+    tempFabricCanvas.setWidth(tempCanvas.width);
+    tempFabricCanvas.setHeight(tempCanvas.height);
+    
+    // Set background color for the fabric canvas
+    tempFabricCanvas.setBackgroundColor(bgColor, tempFabricCanvas.renderAll.bind(tempFabricCanvas));
+    
+    // Add the cloned objects to the temp canvas
+    clonedObjects.forEach(obj => tempFabricCanvas.add(obj));
+    tempFabricCanvas.renderAll();
+    
+    // Get data URL from the temp canvas
+    const dataURL = tempFabricCanvas.toDataURL('image/png');
+    
+    // Send to backend
+    fetch('/process', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: dataURL })
+    })
+    .then(res => res.json())
+    .then(data => {
+        // Display in our result display div
+        displayResults(data);
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        displayResults({ error: 'Failed to process image. Please try again.' });
+    })
+    .finally(hideLoading); // Hide spinner
+}

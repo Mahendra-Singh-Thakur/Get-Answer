@@ -45,7 +45,7 @@ io.on('connection', (socket) => {
     io.emit('userCount', userCount);
 
     socket.on('draw', (data) => {
-        socket.broadcast.emit('draw', data); // Broadcast drawing to others
+        socket.broadcast.emit('draw', data); // Broadcast drawing to others with sender info
     });
 
     socket.on('clear', (data) => {

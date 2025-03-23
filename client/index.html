@@ -29,6 +29,12 @@
                 <button id="eraser-btn" class="btn" title="Eraser (Ctrl+E)">
                     <i class="fas fa-eraser"></i> Eraser
                 </button>
+                <button id="selection-btn" class="btn" title="Selection Mode (Ctrl+S)">
+                    <i class="fas fa-mouse-pointer"></i> Select
+                </button>
+                <button id="select-all-btn" class="btn" title="Select All Objects (Ctrl+A)">
+                    <i class="fas fa-object-group"></i> Select All
+                </button>
                 <button id="clear-btn" class="btn danger" title="Clear (Ctrl+C)">
                     <i class="fas fa-trash"></i> Clear
                 </button>
@@ -48,11 +54,18 @@
             </div>
             
             <div class="tool-group">
-                <button id="predict-btn" class="btn primary" title="Get Answer (Ctrl+A)">
+                <button id="predict-btn" class="btn primary" title="Get Answer (Ctrl+P)">
                     <i class="fas fa-magic"></i> Get Answer
                 </button>
+                <div class="color-picker-container prediction-bg">
+                    <label for="prediction-bg-color">Prediction BG:</label>
+                    <input type="color" id="prediction-bg-color" value="#FFFFFF" title="Background color for prediction">
+                </div>
                 <button id="download-btn" class="btn secondary" title="Download PNG (Ctrl+D)">
                     <i class="fas fa-download"></i> Save
+                </button>
+                <button id="help-btn" class="btn" title="Help Guide">
+                    <i class="fas fa-question-circle"></i> Help
                 </button>
             </div>
         </div>
@@ -73,6 +86,66 @@
                 </button>
             </div>
             <div id="prediction-content"></div>
+        </div>
+
+        <!-- Help Modal -->
+        <div id="help-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2><i class="fas fa-question-circle"></i> How to Use the Smart Math Whiteboard</h2>
+                    <button id="close-help-btn" class="icon-btn" title="Close">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <h3>🖌️ Drawing Tools</h3>
+                    <ul>
+                        <li><strong>Draw Mode:</strong> Draw mathematical symbols and expressions freely.</li>
+                        <li><strong>Color Picker:</strong> Change the color of your drawing.</li>
+                        <li><strong>Brush Size:</strong> Adjust the thickness of your drawing strokes.</li>
+                        <li><strong>Eraser:</strong> Erase parts of your drawing. Press Ctrl+E as a shortcut.</li>
+                    </ul>
+
+                    <h3>🔄 Editing Tools</h3>
+                    <ul>
+                        <li><strong>Undo/Redo:</strong> Use these buttons (or Ctrl+Z/Ctrl+Y) to undo or redo changes.</li>
+                        <li><strong>Clear:</strong> Delete all content on the whiteboard. Press Ctrl+C as a shortcut.</li>
+                        <li><strong>Selection Mode:</strong> Toggle between drawing and selection mode. In selection mode, you can select, move, and resize objects.</li>
+                        <li><strong>Select All:</strong> Automatically select all objects on the whiteboard. Press Ctrl+A as a shortcut.</li>
+                    </ul>
+
+                    <h3>🔍 Recognition Features</h3>
+                    <ul>
+                        <li><strong>Get Answer:</strong> There are two ways to get your symbols recognized:</li>
+                        <ul>
+                            <li><em>In Drawing Mode:</em> Click "Auto Select" to automatically select all drawn objects for recognition.</li>
+                            <li><em>In Selection Mode:</em> Manually select objects and click "Use Selection" to recognize only those objects.</li>
+                        </ul>
+                        <li><strong>Prediction Background:</strong> Choose a background color for the prediction image. This can improve recognition accuracy.</li>
+                        <li><strong>Preview:</strong> Before sending for recognition, you'll see a preview of what will be processed.</li>
+                        <li><strong>Results:</strong> Recognition results show the identified symbols and their evaluation if applicable.</li>
+                        <li><strong>Print to Whiteboard:</strong> Add the recognized expression back to the whiteboard as editable text.</li>
+                    </ul>
+
+                    <h3>💾 Other Features</h3>
+                    <ul>
+                        <li><strong>Save:</strong> Download your whiteboard as a PNG image. Press Ctrl+D as a shortcut.</li>
+                        <li><strong>Collaboration:</strong> Multiple users can work together on the same whiteboard in real-time.</li>
+                    </ul>
+
+                    <h3>⌨️ Keyboard Shortcuts</h3>
+                    <ul>
+                        <li><strong>Ctrl+Z:</strong> Undo</li>
+                        <li><strong>Ctrl+Y:</strong> Redo</li>
+                        <li><strong>Ctrl+P:</strong> Get Answer (prediction)</li>
+                        <li><strong>Ctrl+E:</strong> Toggle Eraser</li>
+                        <li><strong>Ctrl+S:</strong> Toggle Selection Mode</li>
+                        <li><strong>Ctrl+A:</strong> Select All Objects</li>
+                        <li><strong>Ctrl+C:</strong> Clear Whiteboard</li>
+                        <li><strong>Ctrl+D:</strong> Download as PNG</li>
+                    </ul>
+                </div>
+            </div>
         </div>
 
         <!-- Loading Spinner -->
