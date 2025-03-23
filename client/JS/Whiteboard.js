@@ -582,38 +582,31 @@ function printSymbolsToWhiteboard(symbols, evaluationResult) {
     });
 }
 
-// Function to show a temporary message to the user
-function showMessage(text) {
-    // Create or get the message element
-    let messageEl = document.getElementById('canvas-message');
-    if (!messageEl) {
-        messageEl = document.createElement('div');
-        messageEl.id = 'canvas-message';
-        messageEl.style.position = 'absolute';
-        messageEl.style.top = '10px';
-        messageEl.style.left = '50%';
-        messageEl.style.transform = 'translateX(-50%)';
-        messageEl.style.background = 'rgba(0,0,0,0.7)';
-        messageEl.style.color = 'white';
-        messageEl.style.padding = '10px 20px';
-        messageEl.style.borderRadius = '5px';
-        messageEl.style.zIndex = '50';
-        messageEl.style.transition = 'opacity 0.3s ease';
-        messageEl.style.pointerEvents = 'none';
-        document.querySelector('.canvas-container').appendChild(messageEl);
+// Show a temporary message to the user
+function showMessage(message, duration = 3000) {
+    hideMessage(); // Remove any existing message
+    
+    const messageElement = document.createElement('div');
+    messageElement.className = 'temporary-message';
+    messageElement.id = 'temp-message';
+    messageElement.textContent = message;
+    document.body.appendChild(messageElement);
+    
+    if (duration > 0) {
+        setTimeout(hideMessage, duration);
     }
     
-    messageEl.textContent = text;
-    messageEl.style.opacity = '1';
+    return messageElement;
 }
 
+// Hide the temporary message
 function hideMessage() {
-    const messageEl = document.getElementById('canvas-message');
-    if (messageEl) {
-        messageEl.style.opacity = '0';
+    const existingMessage = document.getElementById('temp-message');
+    if (existingMessage) {
+        existingMessage.classList.add('message-fade-out');
         setTimeout(() => {
-            if (messageEl.parentNode) {
-                messageEl.parentNode.removeChild(messageEl);
+            if (document.body.contains(existingMessage)) {
+                document.body.removeChild(existingMessage);
             }
         }, 300);
     }
@@ -1291,4 +1284,512 @@ function processObjectSelection(selection, bounds, padding, bgColor) {
         displayResults({ error: 'Failed to process image. Please try again.' });
     })
     .finally(hideLoading); // Hide spinner
+}
+
+// Add zoom functionality for canvas
+function addZoomSupport() {
+    // Track zoom level and pan position
+    let zoomLevel = 1;
+    const MIN_ZOOM = 0.5;
+    const MAX_ZOOM = 3;
+    let isPanning = false;
+    let lastPosX, lastPosY;
+    
+    // Add zoom controls
+    const zoomControlsContainer = document.createElement('div');
+    zoomControlsContainer.className = 'zoom-controls';
+    zoomControlsContainer.innerHTML = `
+        <button class="zoom-btn zoom-in" title="Zoom In"><i class="fas fa-search-plus"></i></button>
+        <button class="zoom-btn zoom-reset" title="Reset Zoom">100%</button>
+        <button class="zoom-btn zoom-out" title="Zoom Out"><i class="fas fa-search-minus"></i></button>
+    `;
+    document.querySelector('.canvas-container').appendChild(zoomControlsContainer);
+    
+    // Add event listeners for zoom controls
+    document.querySelector('.zoom-in').addEventListener('click', () => {
+        zoomCanvas(0.1);
+    });
+    
+    document.querySelector('.zoom-out').addEventListener('click', () => {
+        zoomCanvas(-0.1);
+    });
+    
+    document.querySelector('.zoom-reset').addEventListener('click', () => {
+        resetZoom();
+    });
+    
+    // Zoom with mouse wheel
+    canvas.on('mouse:wheel', function(opt) {
+        const delta = opt.e.deltaY;
+        let zoom = canvas.getZoom();
+        zoom *= 0.999 ** delta;
+        if (zoom > MAX_ZOOM) zoom = MAX_ZOOM;
+        if (zoom < MIN_ZOOM) zoom = MIN_ZOOM;
+        
+        // Calculate zoom point
+        const point = {
+            x: opt.e.offsetX,
+            y: opt.e.offsetY
+        };
+        
+        zoomCanvas(0, zoom, point);
+        opt.e.preventDefault();
+        opt.e.stopPropagation();
+    });
+    
+    // Enable panning with middle mouse or when spacebar is pressed
+    let isSpacePressed = false;
+    document.addEventListener('keydown', function(e) {
+        if (e.code === 'Space' && !isSpacePressed) {
+            isSpacePressed = true;
+            canvas.defaultCursor = 'grab';
+            canvas.hoverCursor = 'grab';
+            document.body.style.cursor = 'grab';
+            canvas.isDrawingMode = false;
+            
+            // Show a temporary message
+            showMessage('Pan mode active (hold spacebar). Release spacebar to return to drawing.');
+        }
+    });
+    
+    document.addEventListener('keyup', function(e) {
+        if (e.code === 'Space') {
+            isSpacePressed = false;
+            resetCursors();
+            canvas.isDrawingMode = !canvas.selection;
+            hideMessage();
+        }
+    });
+    
+    canvas.on('mouse:down', function(opt) {
+        if (isSpacePressed || opt.e.button === 1) { // Middle mouse button (1) or space key
+            isPanning = true;
+            canvas.selection = false;
+            lastPosX = opt.e.clientX;
+            lastPosY = opt.e.clientY;
+            canvas.defaultCursor = 'grabbing';
+            canvas.hoverCursor = 'grabbing';
+            document.body.style.cursor = 'grabbing';
+        }
+    });
+    
+    canvas.on('mouse:move', function(opt) {
+        if (isPanning && (isSpacePressed || opt.e.buttons === 4)) { // 4 is middle mouse button pressed
+            const deltaX = opt.e.clientX - lastPosX;
+            const deltaY = opt.e.clientY - lastPosY;
+            lastPosX = opt.e.clientX;
+            lastPosY = opt.e.clientY;
+            
+            const currentViewport = canvas.viewportTransform;
+            currentViewport[4] += deltaX;
+            currentViewport[5] += deltaY;
+            canvas.requestRenderAll();
+            
+            // Update zoom percentage in UI
+            updateZoomDisplay();
+        }
+    });
+    
+    canvas.on('mouse:up', function() {
+        isPanning = false;
+        canvas.selection = !canvas.isDrawingMode;
+        if (!isSpacePressed) {
+            resetCursors();
+        }
+    });
+    
+    function resetCursors() {
+        canvas.defaultCursor = canvas.isDrawingMode ? 'crosshair' : 'default';
+        canvas.hoverCursor = canvas.isDrawingMode ? 'crosshair' : 'move';
+        document.body.style.cursor = 'default';
+    }
+    
+    function zoomCanvas(delta, targetZoom, point) {
+        let zoom = targetZoom || canvas.getZoom();
+        if (!targetZoom) {
+            zoom += delta;
+        }
+        
+        if (zoom > MAX_ZOOM) zoom = MAX_ZOOM;
+        if (zoom < MIN_ZOOM) zoom = MIN_ZOOM;
+        
+        if (point) {
+            // Zoom to point
+            canvas.zoomToPoint(point, zoom);
+        } else {
+            // Zoom to center
+            canvas.setZoom(zoom);
+        }
+        
+        zoomLevel = zoom;
+        updateZoomDisplay();
+    }
+    
+    function resetZoom() {
+        canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+        zoomLevel = 1;
+        updateZoomDisplay();
+    }
+    
+    function updateZoomDisplay() {
+        const percentage = Math.round(zoomLevel * 100);
+        document.querySelector('.zoom-reset').textContent = `${percentage}%`;
+    }
+}
+
+// Add welcome message and tooltips
+function showWelcomeMessage() {
+    const welcomeMessage = document.createElement('div');
+    welcomeMessage.className = 'welcome-message';
+    welcomeMessage.innerHTML = `
+        <div class="welcome-title">
+            <i class="fas fa-paint-brush"></i> Welcome to Smart Math Whiteboard!
+        </div>
+        <p>Start drawing mathematical expressions, then click "Auto Select" to get them recognized.</p>
+        <div class="welcome-tip">
+            <i class="fas fa-lightbulb"></i> <strong>Tip:</strong> Press the <span class="shortcut">?</span> key anytime to show help.
+        </div>
+        <button class="close-welcome btn">Got it!</button>
+    `;
+    document.body.appendChild(welcomeMessage);
+    
+    // Close button
+    welcomeMessage.querySelector('.close-welcome').addEventListener('click', () => {
+        welcomeMessage.classList.add('welcome-closing');
+        setTimeout(() => welcomeMessage.remove(), 500);
+        localStorage.setItem('welcomeShown', 'true');
+    });
+    
+    // Auto close after 10 seconds
+    setTimeout(() => {
+        if (document.body.contains(welcomeMessage)) {
+            welcomeMessage.classList.add('welcome-closing');
+            setTimeout(() => welcomeMessage.remove(), 500);
+        }
+    }, 10000);
+    
+    // Don't show again if user has seen it
+    if (localStorage.getItem('welcomeShown')) {
+        welcomeMessage.remove();
+    }
+}
+
+// Add random drawing tips
+function setupDrawingTips() {
+    const tips = [
+        "Use Ctrl+A to select all objects at once",
+        "Double-click text to edit it",
+        "Press spacebar to pan around the canvas",
+        "Use mouse wheel to zoom in and out",
+        "Try selecting specific parts of your equation",
+        "Change the prediction background color for better results",
+        "Press ? key anytime to show the help guide",
+        "Use Ctrl+Z and Ctrl+Y to undo and redo changes",
+        "Switch to selection mode to move objects around"
+    ];
+    
+    let tipIndex = 0;
+    const showNextTip = () => {
+        const tipElement = document.getElementById('drawing-tip') || document.createElement('div');
+        tipElement.id = 'drawing-tip';
+        
+        if (!document.body.contains(tipElement)) {
+            document.body.appendChild(tipElement);
+        }
+        
+        tipElement.innerHTML = `
+            <i class="fas fa-lightbulb"></i> <span>${tips[tipIndex]}</span>
+        `;
+        
+        tipElement.classList.add('tip-showing');
+        setTimeout(() => tipElement.classList.remove('tip-showing'), 5000);
+        
+        tipIndex = (tipIndex + 1) % tips.length;
+    };
+    
+    // Show first tip after 15 seconds
+    setTimeout(showNextTip, 15000);
+    
+    // Show tips periodically every 2 minutes
+    setInterval(showNextTip, 120000);
+    
+    // Also show tips when user is idle for 30 seconds
+    let idleTimer;
+    const resetIdleTimer = () => {
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(showNextTip, 30000);
+    };
+    
+    ['mousemove', 'mousedown', 'keypress', 'touchstart'].forEach(event => {
+        document.addEventListener(event, resetIdleTimer);
+    });
+    
+    resetIdleTimer();
+    
+    // Add a key shortcut to show help
+    document.addEventListener('keydown', (e) => {
+        if (e.key === '?' || e.key === '/') {
+            e.preventDefault();
+            helpModal.classList.remove('hidden');
+        }
+    });
+}
+
+// Add feedback reaction animations
+function setupFeedbackAnimations() {
+    // Create confetti effect for successful predictions
+    const createConfetti = () => {
+        const confettiContainer = document.createElement('div');
+        confettiContainer.className = 'confetti-container';
+        document.body.appendChild(confettiContainer);
+        
+        // Create 50 confetti pieces
+        for (let i = 0; i < 50; i++) {
+            const confetti = document.createElement('div');
+            confetti.className = 'confetti';
+            confetti.style.left = Math.random() * 100 + 'vw';
+            confetti.style.animationDelay = Math.random() * 3 + 's';
+            confetti.style.backgroundColor = `hsl(${Math.random() * 360}, 80%, 60%)`;
+            confettiContainer.appendChild(confetti);
+        }
+        
+        // Remove after animation completes
+        setTimeout(() => confettiContainer.remove(), 4000);
+    };
+    
+    // Function to celebrate successful predictions
+    window.celebrateSuccess = () => {
+        createConfetti();
+        
+        // Play a success sound
+        const audio = new Audio('data:audio/mp3;base64,//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAAKAAAEQACAgoKCgoKCgoKtra2tra2tra3W1tbW1tbW1tb/////////////////////////////////AAAAAAAAAAAAAAAAAAD/wAAAAAAAAAAAAAAAAAACAAACAAACAAIAAgACAgICAgICAgICAgICAgICAgICAgICAgAAAP/+5DEAAAGcAFn/AAABZAxJT+AAACAAAACAAAAAIAAAAAAAAAAAECAAP8AAH/4IGBgYGBgYGBgQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQAAAAAA//8QEBAQEBAQEAAAAAAAAAAAAAEQAAAAAf/8AAAwMAAAIAAAcDgQCBwOB5//8RISEhISEhIIAAEgcEAQOCQPBIOAgQEAggGAgEDgkAgcBAIDg');
+        audio.volume = 0.2;
+        audio.play().catch(e => console.error('Audio play error:', e));
+    };
+}
+
+// Initialize new interactive features
+function initInteractiveFeatures() {
+    addZoomSupport();
+    showWelcomeMessage();
+    setupDrawingTips();
+    setupFeedbackAnimations();
+    
+    // Modify displayResults to add celebration for successful predictions
+    const originalDisplayResults = displayResults;
+    displayResults = function(data) {
+        originalDisplayResults(data);
+        
+        // If prediction successful and has evaluation result
+        if (!data.error && !data.message && data.symbol_1) {
+            const symbols = Object.entries(data)
+                .filter(([key]) => key.startsWith('symbol_'))
+                .map(([_, value]) => value);
+                
+            const evaluationResult = tryEvaluateExpression(symbols);
+            if (evaluationResult !== null) {
+                window.celebrateSuccess();
+            }
+        }
+    };
+}
+
+// Initialize the app
+function init() {
+    setUpCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    
+    // Setup color picker interaction
+    const colorPicker = document.getElementById('colorPicker');
+    colorPicker.addEventListener('change', () => {
+        canvas.freeDrawingBrush.color = colorPicker.value;
+    });
+    
+    // Create brush size slider interaction
+    const brushSizeSlider = document.getElementById('brushSize');
+    brushSizeSlider.addEventListener('input', () => {
+        canvas.freeDrawingBrush.width = parseInt(brushSizeSlider.value);
+    });
+    
+    // Set default brush size
+    brushSizeSlider.value = 2;
+    canvas.freeDrawingBrush.width = 2;
+    
+    // Set up drawing toggle button
+    setupModeToggle();
+    
+    // Set up socket event listeners
+    setupSocketEvents();
+    
+    // Initialize undo/redo functionality
+    initUndoRedo();
+    
+    // Initialize the prediction background color picker
+    initBackgroundColorPicker();
+    
+    // Initialize new interactive features
+    initInteractiveFeatures();
+    
+    // Initialize keyboard shortcuts
+    setupKeyboardShortcuts();
+}
+
+// Set up keyboard shortcuts for common actions
+function setupKeyboardShortcuts() {
+    document.addEventListener('keydown', function(e) {
+        // Check if user is typing in an input field
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+            return;
+        }
+        
+        // Ctrl+Z for undo
+        if (e.ctrlKey && e.key === 'z') {
+            e.preventDefault();
+            undo();
+            showMessage('Undo');
+        }
+        
+        // Ctrl+Y for redo
+        if (e.ctrlKey && e.key === 'y') {
+            e.preventDefault();
+            redo();
+            showMessage('Redo');
+        }
+        
+        // Escape to cancel selection
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            if (selectionRect) {
+                removeSelectionRectangle();
+                showMessage('Selection canceled');
+            } else if (isShowingPreview) {
+                hidePreview();
+                showMessage('Preview closed');
+            }
+        }
+        
+        // D key to toggle drawing mode
+        if (e.key === 'd' || e.key === 'D') {
+            e.preventDefault();
+            toggleDrawingMode();
+            showMessage(canvas.isDrawingMode ? 'Drawing mode' : 'Selection mode');
+        }
+        
+        // S key to start area selection
+        if (e.key === 's' || e.key === 'S') {
+            e.preventDefault();
+            startAreaSelection();
+            showMessage('Select an area for prediction');
+        }
+        
+        // A key for auto selection
+        if (e.key === 'a' || e.key === 'A') {
+            if (!e.ctrlKey) { // Don't trigger on Ctrl+A (select all)
+                e.preventDefault();
+                autoSelectArea();
+                showMessage('Auto selecting...');
+            }
+        }
+        
+        // P key to predict the selection
+        if (e.key === 'p' || e.key === 'P') {
+            e.preventDefault();
+            if (selectionRect) {
+                makeSelectionPrediction();
+                showMessage('Making prediction...');
+            } else {
+                showMessage('Select an area first');
+            }
+        }
+        
+        // C key to clear canvas
+        if (e.key === 'c' || e.key === 'C' && !e.ctrlKey) {
+            e.preventDefault();
+            if (confirm('Are you sure you want to clear the canvas?')) {
+                clearCanvas();
+                showMessage('Canvas cleared');
+            }
+        }
+        
+        // + or = to increase brush size
+        if (e.key === '+' || e.key === '=') {
+            e.preventDefault();
+            const brushSize = document.getElementById('brushSize');
+            const newSize = Math.min(parseInt(brushSize.value) + 1, parseInt(brushSize.max));
+            brushSize.value = newSize;
+            canvas.freeDrawingBrush.width = newSize;
+            showMessage(`Brush size: ${newSize}`);
+        }
+        
+        // - to decrease brush size
+        if (e.key === '-') {
+            e.preventDefault();
+            const brushSize = document.getElementById('brushSize');
+            const newSize = Math.max(parseInt(brushSize.value) - 1, parseInt(brushSize.min));
+            brushSize.value = newSize;
+            canvas.freeDrawingBrush.width = newSize;
+            showMessage(`Brush size: ${newSize}`);
+        }
+        
+        // Delete key to remove selected objects
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+            if (!canvas.isDrawingMode && canvas.getActiveObjects().length > 0) {
+                e.preventDefault();
+                deleteSelectedObjects();
+                showMessage('Objects deleted');
+            }
+        }
+    });
+    
+    // Handle Ctrl+A to select all objects
+    document.addEventListener('keydown', function(e) {
+        if (e.ctrlKey && e.key === 'a' && !canvas.isDrawingMode) {
+            e.preventDefault();
+            canvas.discardActiveObject();
+            const selection = new fabric.ActiveSelection(canvas.getObjects(), {
+                canvas: canvas
+            });
+            canvas.setActiveObject(selection);
+            canvas.requestRenderAll();
+            showMessage('All objects selected');
+        }
+    });
+}
+
+// Delete selected objects
+function deleteSelectedObjects() {
+    saveCanvasState();
+    const activeObjects = canvas.getActiveObjects();
+    
+    if (activeObjects.length) {
+        activeObjects.forEach(obj => {
+            canvas.remove(obj);
+        });
+        
+        canvas.discardActiveObject();
+        canvas.requestRenderAll();
+        
+        // Emit the change
+        if (socket) {
+            socket.emit('drawing-update', {
+                canvasState: JSON.stringify(canvas),
+                room: roomId
+            });
+        }
+    }
+}
+
+// Clear the entire canvas
+function clearCanvas() {
+    saveCanvasState();
+    canvas.clear();
+    canvas.setBackgroundColor('#ffffff', canvas.renderAll.bind(canvas));
+    
+    // Emit the change
+    if (socket) {
+        socket.emit('drawing-update', {
+            canvasState: JSON.stringify(canvas),
+            room: roomId
+        });
+    }
 }
