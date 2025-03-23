@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Smart Math Whiteboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/CSS/index.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Reset and base styles */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: #f8f9fa;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        header {
+            background: linear-gradient(135deg, #2980b9 0%, #3498db 100%);
+            color: white;
+            padding: 1rem;
+            text-align: center;
+        }
+        
+        main {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 2rem;
+        }
+        
+        .login-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .login-card {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 400px;
+            padding: 2.5rem;
+            animation: slideUp 0.3s ease forwards;
+            margin: 2rem auto;
+        }
+        
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .login-header {
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+        
+        .login-header h2 {
+            color: var(--primary-color);
+            margin-bottom: 0.5rem;
+        }
+        
+        .login-header p {
+            color: var(--grey-color);
+            font-size: 0.9rem;
+        }
+        
+        .login-logo {
+            font-size: 3rem;
+            color: var(--primary-color);
+            margin-bottom: 1rem;
+        }
+        
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        
+        .form-label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: var(--dark-color);
+            font-weight: 500;
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 0.8rem 1rem;
+            border-radius: var(--border-radius);
+            border: 1px solid #e0e0e0;
+            font-family: 'Poppins', sans-serif;
+            transition: var(--transition);
+        }
+        
+        .form-input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 2px rgba(67, 97, 238, 0.2);
+        }
+        
+        .form-input-group {
+            position: relative;
+        }
+        
+        .form-input-icon {
+            position: absolute;
+            right: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--grey-color);
+            cursor: pointer;
+            transition: var(--transition);
+        }
+        
+        .form-input-icon:hover {
+            color: var(--dark-color);
+        }
+        
+        .login-btn {
+            width: 100%;
+            padding: 0.8rem;
+            margin-top: 1rem;
+            font-size: 1rem;
+            background: linear-gradient(135deg, #2980b9 0%, #3498db 100%);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+        
+        .login-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .login-btn:active {
+            transform: translateY(0);
+        }
+        
+        .login-footer {
+            margin-top: 2rem;
+            text-align: center;
+            font-size: 0.9rem;
+            color: var(--grey-color);
+        }
+        
+        .login-footer a {
+            color: var(--primary-color);
+            text-decoration: none;
+            font-weight: 500;
+            transition: var(--transition);
+        }
+        
+        .login-footer a:hover {
+            text-decoration: underline;
+        }
+        
+        .social-login {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+        
+        .social-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background-color: #f5f5f5;
+            color: var(--dark-color);
+            transition: var(--transition);
+        }
+        
+        .social-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .social-btn.google {
+            color: #DB4437;
+        }
+        
+        .social-btn.facebook {
+            color: #4267B2;
+        }
+        
+        .social-btn.twitter {
+            color: #1DA1F2;
+        }
+        
+        .remember-me {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .remember-me input {
+            width: 16px;
+            height: 16px;
+        }
+        
+        .divider {
+            display: flex;
+            align-items: center;
+            margin: 1.5rem 0;
+            color: var(--grey-color);
+        }
+        
+        .divider::before,
+        .divider::after {
+            content: "";
+            flex: 1;
+            height: 1px;
+            background-color: #e0e0e0;
+        }
+        
+        .divider span {
+            padding: 0 1rem;
+            font-size: 0.9rem;
+        }
+        
+        /* Add these styles for messages */
+        .message {
+            padding: 12px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            font-size: 14px;
+            text-align: center;
+        }
+        
+        .message.error {
+            background-color: #fff0f0;
+            color: #e74c3c;
+            border: 1px solid #ffcdd2;
+        }
+        
+        .message.success {
+            background-color: #f0fff0;
+            color: #2ecc71;
+            border: 1px solid #c8e6c9;
+        }
+        
+        .message.info {
+            background-color: #f0f8ff;
+            color: #3498db;
+            border: 1px solid #bbdefb;
+        }
+        
+        footer {
+            background: linear-gradient(135deg, #2980b9 0%, #3498db 100%);
+            color: white;
+            text-align: center;
+            padding: 1rem;
+            margin-top: auto;
+        }
+        
+        footer p {
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+        
+        .card-description {
+            margin-bottom: 1.5rem;
+            color: #6c757d;
+            text-align: center;
+            font-size: 0.95rem;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Smart Math Whiteboard</h1>
+        <p>Draw mathematical expressions and get instant recognition</p>
+    </header>
+
+    <main>
+        <div class="login-container">
+            <div class="login-card">
+                <div class="login-header">
+                    <div class="login-logo">
+                        <i class="fas fa-calculator"></i>
+                    </div>
+                    <h2>Welcome Back</h2>
+                    <p>Sign in to continue to Smart Math Whiteboard</p>
+                </div>
+                
+                <p class="card-description text-center">Login to access your Smart Math Whiteboard</p>
+                
+                <div id="message" class="message" style="display: none;"></div>
+                
+                <form id="loginForm">
+                    <div class="form-group">
+                        <label for="username" class="form-label">Username or Email</label>
+                        <div class="form-input-group">
+                            <input type="text" id="username" class="form-input" placeholder="Enter your username or email" required>
+                            <i class="fas fa-user form-input-icon"></i>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="password" class="form-label">Password</label>
+                        <div class="form-input-group">
+                            <input type="password" id="password" class="form-input" placeholder="Enter your password" required>
+                            <i class="fas fa-eye form-input-icon toggle-password"></i>
+                        </div>
+                    </div>
+                    
+                    <div class="remember-me">
+                        <input type="checkbox" id="remember" checked>
+                        <label for="remember">Remember me</label>
+                    </div>
+                    
+                    <button type="submit" class="btn primary login-btn">Sign In</button>
+                    
+                    <div class="login-footer">
+                        <a href="#" id="forgotPassword">Forgot password?</a>
+                    </div>
+                </form>
+                
+                <div class="divider">
+                    <span>or continue with</span>
+                </div>
+                
+                <div class="social-login">
+                    <a href="#" class="social-btn google">
+                        <i class="fab fa-google"></i>
+                    </a>
+                    <a href="#" class="social-btn facebook">
+                        <i class="fab fa-facebook-f"></i>
+                    </a>
+                    <a href="#" class="social-btn twitter">
+                        <i class="fab fa-twitter"></i>
+                    </a>
+                </div>
+                
+                <div class="login-footer">
+                    Don't have an account? <a href="register.html">Sign up</a>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <p>&copy; 2023 Smart Math Whiteboard. All rights reserved.</p>
+    </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Toggle password visibility
+            const togglePassword = document.querySelector('.toggle-password');
+            const passwordInput = document.getElementById('password');
+            
+            togglePassword.addEventListener('click', function() {
+                const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+                passwordInput.setAttribute('type', type);
+                this.querySelector('i').classList.toggle('fa-eye');
+                this.querySelector('i').classList.toggle('fa-eye-slash');
+            });
+            
+            // Handle form submission
+            const loginForm = document.getElementById('loginForm');
+            
+            loginForm.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const username = document.getElementById('username').value;
+                const password = document.getElementById('password').value;
+                const remember = document.getElementById('remember').checked;
+                const messageElement = document.getElementById('message');
+                
+                // Simple validation
+                if (!username || !password) {
+                    showMessage('Please fill in all fields', 'error');
+                    return;
+                }
+                
+                try {
+                    // Show loading state
+                    showMessage('Logging in...', 'info');
+                    
+                    const response = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ username, password })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        // Save token to localStorage
+                        localStorage.setItem('authToken', data.token);
+                        
+                        showMessage('Login successful! Redirecting...', 'success');
+                        
+                        // Redirect to main app
+                        setTimeout(() => {
+                            window.location.href = 'index.html';
+                        }, 1500);
+                    } else {
+                        showMessage(data.message || 'Login failed. Please check your credentials.', 'error');
+                    }
+                } catch (error) {
+                    console.error('Login error:', error);
+                    showMessage('An error occurred. Please try again.', 'error');
+                }
+            });
+            
+            // Forgot password
+            document.getElementById('forgotPassword').addEventListener('click', function(e) {
+                e.preventDefault();
+                alert('Password reset functionality would be implemented here.');
+            });
+        });
+        
+        // Helper to show messages
+        function showMessage(text, type) {
+            const messageElement = document.getElementById('message');
+            messageElement.textContent = text;
+            messageElement.className = 'message';
+            
+            // Add appropriate class based on message type
+            if (type === 'error') {
+                messageElement.classList.add('error');
+            } else if (type === 'success') {
+                messageElement.classList.add('success');
+            } else if (type === 'info') {
+                messageElement.classList.add('info');
+            }
+            
+            messageElement.style.display = 'block';
+        }
+    </script>
+</body>
+</html> 

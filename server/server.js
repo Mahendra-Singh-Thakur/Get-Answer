@@ -3,15 +3,29 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const cors = require('cors');
+const mongoose = require('mongoose');
 
 const processRoutes = require('./routes/processRoutes');  // ✅ Import routes
+const authRoutes = require('./routes/auth');  // ✅ Import auth routes
 
 // Environment variables with defaults for development
 const PORT = process.env.PORT || 5000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/smartwhiteboard';
 const CLIENT_PATH = NODE_ENV === 'production' 
     ? path.join(__dirname, '../dist/client') 
     : path.join(__dirname, '../client');
+
+// Connect to MongoDB
+mongoose.connect(MONGO_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true
+})
+.then(() => console.log('📊 MongoDB Connected'))
+.catch(err => {
+    console.error('❌ MongoDB Connection Error:', err);
+    process.exit(1);
+});
 
 const app = express();
 const server = http.createServer(app);
@@ -64,6 +78,7 @@ io.on('connection', (socket) => {
 
 // API Routes
 app.use('/', processRoutes);  // ✅ Use the routes module
+app.use('/api/auth', authRoutes);  // ✅ Use the auth routes
 
 // Catch-all route to return the HTML file for client-side routing
 app.get('*', (req, res) => {
