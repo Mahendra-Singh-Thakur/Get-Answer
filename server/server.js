@@ -50,26 +50,77 @@ if (!fs.existsSync(uploadsDir)) {
 
 // Socket.io Events
 let userCount = 0;
+const userRooms = new Map(); // Map to track which room each user is in
 
 io.on('connection', (socket) => {
     userCount++;
     console.log('🟢 User connected:', socket.id);
     
+    // Get user information from auth token (if available)
+    let userId = socket.handshake.auth.userId || socket.id;
+    
+    // Initially, place user in their own private room (same as their ID)
+    let roomId = userId;
+    socket.join(roomId);
+    userRooms.set(socket.id, roomId);
+    
+    console.log(`User ${socket.id} joined room ${roomId}`);
+    
     // Broadcast updated user count to all clients
     io.emit('userCount', userCount);
+    
+    // Handle room joining (for shared whiteboard sessions)
+    socket.on('joinRoom', (newRoomId) => {
+        // Leave current room
+        const currentRoom = userRooms.get(socket.id);
+        if (currentRoom) {
+            socket.leave(currentRoom);
+            console.log(`User ${socket.id} left room ${currentRoom}`);
+        }
+        
+        // Join new room
+        socket.join(newRoomId);
+        userRooms.set(socket.id, newRoomId);
+        console.log(`User ${socket.id} joined room ${newRoomId}`);
+        
+        // Notify the client they successfully joined
+        socket.emit('roomJoined', { roomId: newRoomId });
+    });
 
     socket.on('draw', (data) => {
-        socket.broadcast.emit('draw', data); // Broadcast drawing to others with sender info
+        // Include the sender's ID with the data
+        const enhancedData = {
+            ...data,
+            sender: socket.id
+        };
+        
+        // Only broadcast to users in the same room
+        const roomId = userRooms.get(socket.id);
+        if (roomId) {
+            socket.to(roomId).emit('draw', enhancedData);
+        }
     });
 
     socket.on('clear', (data) => {
-        // Forward the clear event with initiator info
-        io.emit('clear', data); // Clear canvas for all users
+        // Include the initiator's ID with the data
+        const enhancedData = {
+            ...data,
+            initiator: socket.id
+        };
+        
+        // Only broadcast to users in the same room
+        const roomId = userRooms.get(socket.id);
+        if (roomId) {
+            socket.to(roomId).emit('clear', enhancedData);
+        }
     });
 
     socket.on('disconnect', () => {
         userCount = Math.max(0, userCount - 1); // Prevent negative counts
         console.log('🔴 User disconnected:', socket.id);
+        
+        // Remove from room tracking
+        userRooms.delete(socket.id);
         
         // Broadcast updated user count
         io.emit('userCount', userCount);

@@ -1,6 +1,24 @@
 // Whiteboard.js - Fully featured collaborative whiteboard
 
-const socket = io();
+// Get the auth token for identifying the user
+const authToken = localStorage.getItem('authToken');
+let userId = null;
+
+// Initialize Socket.io with auth credentials
+const socket = io({
+    auth: {
+        token: authToken,
+        userId: userId
+    }
+});
+
+// Store the current room ID
+let currentRoomId = null;
+
+// Parse URL parameters to check for a shared room
+const urlParams = new URLSearchParams(window.location.search);
+const sharedRoomId = urlParams.get('room');
+
 const canvas = new fabric.Canvas('whiteboard', { 
     isDrawingMode: true,
     width: document.querySelector('.canvas-container').clientWidth,
@@ -780,9 +798,44 @@ socket.on('clear', (data) => {
 
 // --------- Handle Socket.io Connections ---------
 socket.on('connect', () => {
-    console.log('Connected to server');
+    console.log('Connected to server with ID:', socket.id);
+    
+    // If we have a shared room ID from URL, join that room
+    if (sharedRoomId) {
+        joinRoom(sharedRoomId);
+    } else {
+        // By default, each user is in their own personal room (their socket ID)
+        currentRoomId = socket.id;
+        showMessage(`You're in your personal whiteboard. Share using room ID: ${currentRoomId}`);
+    }
+    
+    // Try to get the user ID from the auth token
+    if (authToken) {
+        fetchUserInfo(authToken)
+            .then(user => {
+                if (user && user.id) {
+                    userId = user.id;
+                    socket.auth.userId = userId;
+                    console.log('Authenticated as user:', userId);
+                }
+            })
+            .catch(err => console.error('Failed to get user info:', err));
+    }
 });
 
+// Handle room joining confirmation
+socket.on('roomJoined', (data) => {
+    currentRoomId = data.roomId;
+    
+    // Update UI to show the current room
+    showMessage(`Joined shared whiteboard room: ${currentRoomId}`);
+    
+    // Update URL without reloading the page
+    const newUrl = window.location.pathname + '?room=' + currentRoomId;
+    window.history.pushState({ path: newUrl }, '', newUrl);
+});
+
+// Process user count updates
 socket.on('userCount', (count) => {
     connectedUsers = count;
     updateUserCount();
@@ -810,6 +863,101 @@ const predictionBgColor = document.getElementById('prediction-bg-color');
 const helpBtn = document.getElementById('help-btn');
 const closeHelpBtn = document.getElementById('close-help-btn');
 const helpModal = document.getElementById('help-modal');
+const shareBtn = document.getElementById('share-btn') || createShareButton();
+const joinRoomBtn = document.getElementById('join-room-btn') || createJoinRoomButton();
+
+// Create share button if it doesn't exist
+function createShareButton() {
+    const btn = document.createElement('button');
+    btn.id = 'share-btn';
+    btn.className = 'toolbar-button';
+    btn.innerHTML = '<i class="fas fa-share-alt"></i> Share';
+    btn.title = 'Share this whiteboard';
+    
+    // Insert after the download button
+    if (downloadBtn && downloadBtn.parentNode) {
+        downloadBtn.parentNode.insertBefore(btn, downloadBtn.nextSibling);
+    } else {
+        document.querySelector('.toolbar').appendChild(btn);
+    }
+    
+    return btn;
+}
+
+// Create join room button if it doesn't exist
+function createJoinRoomButton() {
+    const btn = document.createElement('button');
+    btn.id = 'join-room-btn';
+    btn.className = 'toolbar-button';
+    btn.innerHTML = '<i class="fas fa-door-open"></i> Join Room';
+    btn.title = 'Join an existing whiteboard room';
+    
+    // Insert after the share button
+    if (shareBtn && shareBtn.parentNode) {
+        shareBtn.parentNode.insertBefore(btn, shareBtn.nextSibling);
+    } else {
+        document.querySelector('.toolbar').appendChild(btn);
+    }
+    
+    return btn;
+}
+
+// Create room UI modal
+function createRoomModal() {
+    // Check if modal already exists
+    if (document.getElementById('room-modal')) {
+        return;
+    }
+    
+    const modal = document.createElement('div');
+    modal.id = 'room-modal';
+    modal.className = 'modal hidden';
+    
+    modal.innerHTML = `
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Collaborate on Whiteboard</h3>
+                <button id="close-room-modal" class="close-button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="input-group">
+                    <label for="room-id-input">Room ID</label>
+                    <input type="text" id="room-id-input" placeholder="Enter room ID to join">
+                </div>
+                <div class="button-group">
+                    <button id="confirm-join-room" class="primary-button">Join Room</button>
+                    <button id="create-share-link" class="secondary-button">Copy Share Link</button>
+                </div>
+                <p id="room-status" class="room-status"></p>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Set up event listeners
+    document.getElementById('close-room-modal').addEventListener('click', () => {
+        modal.classList.add('hidden');
+    });
+    
+    document.getElementById('confirm-join-room').addEventListener('click', () => {
+        const roomId = document.getElementById('room-id-input').value.trim();
+        if (roomId) {
+            joinRoom(roomId);
+            document.getElementById('room-status').textContent = `Joining room: ${roomId}...`;
+        } else {
+            document.getElementById('room-status').textContent = 'Please enter a valid room ID.';
+        }
+    });
+    
+    document.getElementById('create-share-link').addEventListener('click', () => {
+        const shareUrl = createShareableLink();
+        document.getElementById('room-id-input').value = shareUrl;
+        document.getElementById('room-status').textContent = 'Share link copied to clipboard!';
+    });
+    
+    return modal;
+}
 
 colorPicker.addEventListener('input', () => {
     if (!isErasing) canvas.freeDrawingBrush.color = colorPicker.value;
@@ -856,9 +1004,177 @@ helpModal.addEventListener('click', (e) => {
 
 // Close help modal with Escape key
 document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !helpModal.classList.contains('hidden')) {
-        helpModal.classList.add('hidden');
-        e.preventDefault(); // Prevent other escape handlers
+    if (e.key === 'Escape') {
+        // Close any open modals
+        const modals = document.querySelectorAll('.modal:not(.hidden)');
+        if (modals.length > 0) {
+            modals.forEach(modal => modal.classList.add('hidden'));
+            e.preventDefault(); // Prevent other escape handlers
+        }
+    }
+});
+
+// Share button functionality
+shareBtn.addEventListener('click', () => {
+    // Create the room modal if it doesn't exist
+    const roomModal = document.getElementById('room-modal') || createRoomModal();
+    
+    // Update the input with the current room ID
+    const roomIdInput = document.getElementById('room-id-input');
+    if (roomIdInput) {
+        const shareUrl = `${window.location.origin}${window.location.pathname}?room=${currentRoomId || socket.id}`;
+        roomIdInput.value = shareUrl;
+    }
+    
+    // Show the modal
+    roomModal.classList.remove('hidden');
+    
+    // Focus on the input
+    if (roomIdInput) roomIdInput.focus();
+});
+
+// Join room button functionality
+joinRoomBtn.addEventListener('click', () => {
+    // Create the room modal if it doesn't exist
+    const roomModal = document.getElementById('room-modal') || createRoomModal();
+    
+    // Clear the input
+    const roomIdInput = document.getElementById('room-id-input');
+    if (roomIdInput) {
+        roomIdInput.value = '';
+    }
+    
+    // Show the modal
+    roomModal.classList.remove('hidden');
+    
+    // Focus on the input
+    if (roomIdInput) roomIdInput.focus();
+});
+
+// Create the room modal on page load
+document.addEventListener('DOMContentLoaded', function() {
+    createRoomModal();
+    
+    // Add CSS for the modal if not already in CSS files
+    if (!document.getElementById('room-modal-styles')) {
+        const style = document.createElement('style');
+        style.id = 'room-modal-styles';
+        style.textContent = `
+            .modal {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0, 0, 0, 0.5);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                z-index: 1000;
+                opacity: 1;
+                transition: opacity 0.3s ease;
+            }
+            
+            .modal.hidden {
+                opacity: 0;
+                pointer-events: none;
+            }
+            
+            .modal-content {
+                background-color: white;
+                border-radius: 8px;
+                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+                width: 90%;
+                max-width: 500px;
+                max-height: 90vh;
+                overflow-y: auto;
+                animation: zoomIn 0.3s ease;
+            }
+            
+            .modal-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 1rem;
+                border-bottom: 1px solid #e9ecef;
+            }
+            
+            .modal-header h3 {
+                margin: 0;
+                color: #2980b9;
+            }
+            
+            .close-button {
+                background: none;
+                border: none;
+                font-size: 1.5rem;
+                cursor: pointer;
+                color: #6c757d;
+            }
+            
+            .modal-body {
+                padding: 1rem;
+            }
+            
+            .input-group {
+                margin-bottom: 1rem;
+            }
+            
+            .input-group label {
+                display: block;
+                margin-bottom: 0.5rem;
+                font-weight: 500;
+            }
+            
+            .input-group input {
+                width: 100%;
+                padding: 0.5rem;
+                border: 1px solid #ced4da;
+                border-radius: 4px;
+            }
+            
+            .button-group {
+                display: flex;
+                gap: 0.5rem;
+                margin-bottom: 1rem;
+            }
+            
+            .primary-button, .secondary-button {
+                padding: 0.5rem 1rem;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-weight: 500;
+            }
+            
+            .primary-button {
+                background-color: #2980b9;
+                color: white;
+            }
+            
+            .secondary-button {
+                background-color: #e9ecef;
+                color: #212529;
+            }
+            
+            .room-status {
+                margin-top: 1rem;
+                color: #6c757d;
+                font-size: 0.9rem;
+            }
+            
+            @keyframes zoomIn {
+                from {
+                    transform: scale(0.9);
+                    opacity: 0;
+                }
+                to {
+                    transform: scale(1);
+                    opacity: 1;
+                }
+            }
+        `;
+        document.head.appendChild(style);
     }
 });
 
@@ -1291,4 +1607,55 @@ function processObjectSelection(selection, bounds, padding, bgColor) {
         displayResults({ error: 'Failed to process image. Please try again.' });
     })
     .finally(hideLoading); // Hide spinner
+}
+
+// Function to join a specific room
+function joinRoom(roomId) {
+    if (roomId && roomId !== currentRoomId) {
+        socket.emit('joinRoom', roomId);
+        showMessage(`Joining room: ${roomId}...`);
+    }
+}
+
+// Function to create a shareable link
+function createShareableLink() {
+    // Use the current room ID or the socket ID if no room is set
+    const roomToShare = currentRoomId || socket.id;
+    const shareableUrl = `${window.location.origin}${window.location.pathname}?room=${roomToShare}`;
+    
+    // Copy to clipboard
+    navigator.clipboard.writeText(shareableUrl)
+        .then(() => {
+            showMessage('Shareable link copied to clipboard!');
+        })
+        .catch(err => {
+            console.error('Failed to copy link:', err);
+            showMessage('Failed to copy link. URL: ' + shareableUrl);
+        });
+    
+    return shareableUrl;
+}
+
+// Async function to get user info from token
+async function fetchUserInfo(token) {
+    try {
+        const response = await fetch('/api/auth/me', {
+            method: 'GET',
+            headers: {
+                'x-auth-token': token
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            return data.user;
+        } else {
+            console.error('Token validation failed:', data.message);
+            return null;
+        }
+    } catch (error) {
+        console.error('Error fetching user info:', error);
+        return null;
+    }
 }
